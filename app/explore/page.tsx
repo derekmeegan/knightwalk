@@ -41,7 +41,7 @@ interface ChildOption {
   moveSan: string;
 }
 
-export default function ExplorePage() {
+function ExploreContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { fitView, setCenter } = useReactFlow();
@@ -358,5 +358,21 @@ export default function ExplorePage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function ExplorePage() {
+  return (
+    <ReactFlowProvider>
+      <Suspense
+        fallback={
+          <div className="flex h-screen w-full items-center justify-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-zinc-900 dark:border-zinc-100" />
+          </div>
+        }
+      >
+        <ExploreContent />
+      </Suspense>
+    </ReactFlowProvider>
   );
 }
