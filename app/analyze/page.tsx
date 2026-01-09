@@ -297,10 +297,10 @@ function AnalyzeContent() {
   const evaluations = engineInfo?.evaluations ?? [];
 
   return (
-    <div className="flex-1 px-4 py-8 flex flex-col justify-center overflow-hidden">
-      <div className="grid grid-cols-1 lg:grid-cols-[auto_360px] gap-12 w-fit mx-auto">
+    <div className="flex-1 px-4 py-2 lg:py-6 flex flex-col justify-center overflow-hidden">
+      <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 xl:gap-12 w-full max-w-[1400px] mx-auto">
         {/* Left column: Board with vertical eval bar, then PVLines */}
-        <div className="flex flex-col gap-4 self-start">
+        <div className="flex flex-col gap-4">
           {/* Back button */}
           <Button
             variant="ghost"
@@ -313,9 +313,9 @@ function AnalyzeContent() {
 
           {/* Board with vertical eval bar */}
           <div className="flex-shrink-0">
-            <div className="flex gap-8 max-w-[750px]">
+            <div className="flex gap-4 lg:gap-6 xl:gap-8">
               {/* Vertical Eval Bar with engine status */}
-              <div className="w-10 flex flex-col items-center">
+              <div className="w-8 lg:w-10 flex flex-col items-center flex-shrink-0">
                 <ScoreDisplay evaluation={primaryEval} />
                 <div className="flex-1 w-full mt-2">
                   <EvalBar score={score} orientation="vertical" size={32} />
@@ -325,8 +325,8 @@ function AnalyzeContent() {
                 </div>
               </div>
 
-              {/* Chess board */}
-              <div className="flex-1">
+              {/* Chess board - responsive sizing based on viewport */}
+              <div className="flex-1 max-w-[min(calc(100vh-280px),600px)] lg:max-w-[min(calc(100vh-240px),700px)]">
                 <ChessBoard
                   fen={currentFen}
                   onMove={handleMove}
@@ -339,7 +339,7 @@ function AnalyzeContent() {
           </div>
 
           {/* Board controls */}
-          <div className="flex-shrink-0 max-w-[750px] w-full pl-14">
+          <div className="flex-shrink-0 max-w-[min(calc(100vh-280px),600px)] lg:max-w-[min(calc(100vh-240px),700px)] pl-12 lg:pl-16 box-content">
             <BoardControls
               onFirst={goToStart}
               onPrevious={goToPrevious}
@@ -353,7 +353,7 @@ function AnalyzeContent() {
           </div>
 
           {/* Suggested moves (PVLines) - below board */}
-          <div className="flex-shrink-0 max-w-[750px] w-full pl-14">
+          <div className="flex-shrink-0 max-w-[min(calc(100vh-280px),600px)] lg:max-w-[min(calc(100vh-240px),700px)] pl-12 lg:pl-16 box-content">
             <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-3">
               <h3 className="text-xs font-medium text-zinc-500 mb-2">
                 Best Lines
@@ -368,8 +368,8 @@ function AnalyzeContent() {
           </div>
         </div>
 
-        {/* Right column: Games - mt to align with board (skip back button height + gap) */}
-        <div className="overflow-hidden mt-[52px]">
+        {/* Right column: Games - hidden on mobile, self-start to align with board */}
+        <div className="hidden lg:block w-[280px] xl:w-[320px] 2xl:w-[360px] flex-shrink-0 self-start mt-12">
           <GamesList
             games={MOCK_GAMES}
             total={MOCK_GAMES.length}

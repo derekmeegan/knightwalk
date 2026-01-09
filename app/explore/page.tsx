@@ -24,6 +24,7 @@ import { GraphEdge } from "./_components/graph-edge";
 import { IntroNode } from "./_components/intro-node";
 import { applyDagreLayout } from "./_lib/graph-layout";
 import { cn } from "@/app/lib/cn";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useTransitionStore } from "@/app/stores/transition-store";
 
 // Define custom node and edge types
@@ -355,6 +356,40 @@ function ExploreContent() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Mobile navigation arrows */}
+      {selectedNodeId && (
+        <div className="lg:hidden fixed bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4">
+          <button
+            onClick={() => {
+              const parentId = getParentNodeId();
+              if (parentId) navigateToNode(parentId);
+            }}
+            disabled={!getParentNodeId()}
+            className="w-14 h-14 rounded-full bg-zinc-900/80 dark:bg-zinc-100/80 flex items-center justify-center active:scale-95 disabled:opacity-30 disabled:active:scale-100 touch-manipulation shadow-lg"
+            aria-label="Previous move"
+          >
+            <ChevronLeft className="h-8 w-8 text-white dark:text-zinc-900" />
+          </button>
+          <button
+            onClick={() => {
+              const children = getChildNodes();
+              if (children.length === 1) {
+                navigateToNode(children[0].nodeId);
+              } else if (children.length > 1) {
+                setChildOptions(children);
+                setSelectedChildIndex(0);
+                setChildSelectOpen(true);
+              }
+            }}
+            disabled={getChildNodes().length === 0}
+            className="w-14 h-14 rounded-full bg-zinc-900/80 dark:bg-zinc-100/80 flex items-center justify-center active:scale-95 disabled:opacity-30 disabled:active:scale-100 touch-manipulation shadow-lg"
+            aria-label="Next move"
+          >
+            <ChevronRight className="h-8 w-8 text-white dark:text-zinc-900" />
+          </button>
         </div>
       )}
     </div>

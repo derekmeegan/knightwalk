@@ -32,14 +32,24 @@ export const PVLines = memo(function PVLines({
     );
   }
 
+  const displayedEvaluations = evaluations.slice(0, maxLines);
+  const placeholderCount = maxLines - displayedEvaluations.length;
+
   return (
     <div className="space-y-1" style={{ minHeight }}>
-      {evaluations.slice(0, maxLines).map((evaluation, index) => (
+      {displayedEvaluations.map((evaluation, index) => (
         <PVLine
           key={index}
           evaluation={evaluation}
           rank={index + 1}
           onMoveClick={onMoveClick}
+        />
+      ))}
+      {/* Placeholder divs for missing lines */}
+      {Array.from({ length: placeholderCount }).map((_, i) => (
+        <div
+          key={`placeholder-${i}`}
+          className="h-6 bg-zinc-100 dark:bg-zinc-800 rounded animate-pulse"
         />
       ))}
     </div>
@@ -76,7 +86,7 @@ function PVLine({ evaluation, rank, onMoveClick }: PVLineProps) {
       <span className="font-mono text-zinc-600 dark:text-zinc-400 min-w-[50px]">
         {scoreDisplay}
       </span>
-      <div className="font-mono flex flex-wrap gap-x-1 truncate">
+      <div className="font-mono flex flex-nowrap gap-x-1 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
         {displayMoves.map((move, index) => (
           <button
             key={index}

@@ -61,7 +61,7 @@ export function ChessBoard({
       legalMoves.forEach((square) => {
         const piece = game.get(square as ChessSquare);
         styles[square] = {
-          background: piece
+          backgroundImage: piece
             ? "radial-gradient(circle, rgba(0,0,0,0.1) 85%, transparent 85%)"
             : "radial-gradient(circle, rgba(0,0,0,0.1) 25%, transparent 25%)",
           ...styles[square],
