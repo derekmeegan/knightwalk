@@ -1,36 +1,15 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Knightwalk
 
-## Getting Started
+A chess opening visualization app that lets you explore grandmaster games as an interactive graph.
 
-First, run the development server:
+## What it does
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+**Explore Mode** — Navigate opening lines as a visual tree. Each node is a position, each edge is a move. Click through variations, see where lines branch, and discover how openings evolve move by move.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+**Analyze Mode** — Dive deep into any position with Stockfish analysis. See engine evaluations, best lines, and browse games that reached that position.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Why
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Traditional opening explorers show you a list of moves. Knightwalk shows you the shape of an opening — where it branches, where lines converge, which variations are well-trodden paths vs. rare sidelines.
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The graph view gives you spatial intuition about an opening's structure that a move list never could.
