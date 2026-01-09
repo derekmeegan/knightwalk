@@ -7,9 +7,10 @@ interface GameCardProps {
   game: MockGame;
   isSelected: boolean;
   onClick: () => void;
+  className?: string;
 }
 
-export function GameCard({ game, isSelected, onClick }: GameCardProps) {
+export function GameCard({ game, isSelected, onClick, className }: GameCardProps) {
   const {
     white_player,
     black_player,
@@ -34,7 +35,8 @@ export function GameCard({ game, isSelected, onClick }: GameCardProps) {
         "w-full px-3 py-3 text-left transition-colors border-b border-zinc-200 dark:border-zinc-800",
         isSelected
           ? "bg-blue-50 dark:bg-blue-900/20"
-          : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+          : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50",
+        className
       )}
     >
       {/* Players row */}

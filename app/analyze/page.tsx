@@ -369,7 +369,7 @@ function AnalyzeContent() {
         </div>
 
         {/* Right column: Games - mt to align with board (skip back button height + gap) */}
-        <div className="h-full overflow-hidden mt-[52px]">
+        <div className="overflow-hidden mt-[52px]">
           <GamesList
             games={MOCK_GAMES}
             total={MOCK_GAMES.length}

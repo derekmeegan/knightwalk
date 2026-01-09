@@ -16,9 +16,12 @@ export const PVLines = memo(function PVLines({
   currentFen,
   onMoveClick
 }: PVLinesProps) {
+  // Fixed height container to prevent layout shift
+  const minHeight = maxLines * 24 + (maxLines - 1) * 4; // 24px per line + 4px gaps
+
   if (evaluations.length === 0) {
     return (
-      <div className="space-y-2">
+      <div className="space-y-1" style={{ minHeight }}>
         {Array.from({ length: maxLines }).map((_, i) => (
           <div
             key={i}
@@ -30,7 +33,7 @@ export const PVLines = memo(function PVLines({
   }
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-1" style={{ minHeight }}>
       {evaluations.slice(0, maxLines).map((evaluation, index) => (
         <PVLine
           key={index}

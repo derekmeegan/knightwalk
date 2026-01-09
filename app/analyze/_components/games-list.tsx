@@ -42,13 +42,14 @@ export function GamesList({
         </span>
       </div>
 
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto flex flex-col">
         {paginatedGames.map((game) => (
           <GameCard
             key={game.id}
             game={game}
             isSelected={game.id === selectedGameId}
             onClick={() => onGameClick(game)}
+            className={paginatedGames.length >= pageSize ? "flex-1" : undefined}
           />
         ))}
 
