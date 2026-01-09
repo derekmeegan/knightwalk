@@ -57,6 +57,16 @@ export function MiniBoard({
         boardRef.current.style.viewTransitionName = "chess-board";
       }
 
+      // Wait for the browser to paint the viewTransitionName before starting transition
+      // Double rAF ensures we're past the paint
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            resolve();
+          });
+        });
+      });
+
       if (document.startViewTransition) {
         setTransitioning(true);
         const transition = document.startViewTransition(() => {
