@@ -270,8 +270,8 @@ function ExploreContent() {
               // Single child - navigate directly
               navigateToNode(children[0].nodeId);
             } else if (children.length > 1) {
-              // Multiple children - open selection
-              setChildOptions(children);
+              // Multiple children - open selection (sorted alphabetically)
+              setChildOptions([...children].sort((a, b) => a.moveSan.localeCompare(b.moveSan)));
               setSelectedChildIndex(0);
               setChildSelectOpen(true);
             }
@@ -379,7 +379,7 @@ function ExploreContent() {
               if (children.length === 1) {
                 navigateToNode(children[0].nodeId);
               } else if (children.length > 1) {
-                setChildOptions(children);
+                setChildOptions([...children].sort((a, b) => a.moveSan.localeCompare(b.moveSan)));
                 setSelectedChildIndex(0);
                 setChildSelectOpen(true);
               }

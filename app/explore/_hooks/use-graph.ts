@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import type {
   PositionNode,
   MoveEdge,
@@ -50,11 +50,11 @@ export function useGraph(): UseGraphResult {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [focusModeEnabled, setFocusModeEnabled] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [useDatabase, setUseDatabase] = useState(true);
+  const [useDatabase, setUseDatabase] = useState(false); // TODO: temp fix - force mock data
 
-  // Cache for positions and edges from database
-  const [positionCache, setPositionCache] = useState<Map<string, Position>>(new Map());
-  const [edgeCache, setEdgeCache] = useState<Map<string, Edge[]>>(new Map());
+  // Cache for positions and edges from database (refs to avoid re-render loops)
+  const positionCacheRef = useRef<Map<string, Position>>(new Map());
+  const edgeCacheRef = useRef<Map<string, Edge[]>>(new Map());
 
   /**
    * Create a position node from database data
@@ -188,11 +188,11 @@ export function useGraph(): UseGraphResult {
     const newNodes: PositionNode[] = [];
     const newEdges: MoveEdge[] = [];
     const visited = new Set<string>();
-    const newPositionCache = new Map(positionCache);
-    const newEdgeCache = new Map(edgeCache);
+    const positionCache = positionCacheRef.current;
+    const edgeCache = edgeCacheRef.current;
 
     // Get starting position
-    let startPosition = newPositionCache.get("start");
+    let startPosition = positionCache.get("start");
     if (!startPosition) {
       const dbStart = await getStartingPosition();
       if (!dbStart) {
@@ -202,8 +202,8 @@ export function useGraph(): UseGraphResult {
         return;
       }
       startPosition = dbStart;
-      newPositionCache.set("start", dbStart);
-      newPositionCache.set(dbStart.id, dbStart);
+      positionCache.set("start", dbStart);
+      positionCache.set(dbStart.id, dbStart);
     }
 
     // BFS from root up to visibilityDepth
@@ -230,10 +230,10 @@ export function useGraph(): UseGraphResult {
 
       // Add children if within visibility depth
       if (depth < visibilityDepth) {
-        let childEdges = newEdgeCache.get(position.id);
+        let childEdges = edgeCache.get(position.id);
         if (!childEdges) {
           childEdges = await getEdgesFromPosition(position.id, 20);
-          newEdgeCache.set(position.id, childEdges);
+          edgeCache.set(position.id, childEdges);
         }
 
         for (let i = 0; i < childEdges.length; i++) {
@@ -241,7 +241,7 @@ export function useGraph(): UseGraphResult {
           newEdges.push(createMoveEdge(edge, i === 0));
 
           // Get child position
-          let childPosition = newPositionCache.get(edge.to_position_id);
+          let childPosition = positionCache.get(edge.to_position_id);
           if (!childPosition) {
             // Fetch child position - for now skip if not cached
             // In a real app we'd batch fetch these
@@ -265,8 +265,6 @@ export function useGraph(): UseGraphResult {
       applyFocusMode(newNodes, newEdges, selectedNodeId);
     }
 
-    setPositionCache(newPositionCache);
-    setEdgeCache(newEdgeCache);
     setNodes(newNodes);
     setEdges(newEdges);
     setIsLoading(false);
@@ -274,8 +272,6 @@ export function useGraph(): UseGraphResult {
     visibilityDepth,
     selectedNodeId,
     focusModeEnabled,
-    positionCache,
-    edgeCache,
     createPositionNode,
     createMoveEdge,
     applyFocusMode,
