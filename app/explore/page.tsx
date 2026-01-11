@@ -50,6 +50,9 @@ function ExploreContent() {
     new Map(),
   );
 
+  // Track last position we zoomed to (prevent duplicate zooms/URL updates)
+  const lastZoomedPositionRef = useRef<string | null>(null);
+
   // Get focus FEN from URL params (when returning from Analyze)
   const focusFen = searchParams.get("focus")
     ? decodeURIComponent(searchParams.get("focus")!)
@@ -119,8 +122,13 @@ function ExploreContent() {
   // Zoom to a node
   const zoomToNode = useCallback(
     (nodeId: string, updateUrl = true) => {
+      // Skip if we already zoomed to this node
+      if (lastZoomedPositionRef.current === nodeId) return;
+
       const nodeData = layoutedPositionNodes.find((n) => n.id === nodeId);
       if (nodeData) {
+        lastZoomedPositionRef.current = nodeId;
+
         setCenter(nodeData.position.x + 90, nodeData.position.y + 140, {
           zoom: 1.5,
           duration: 500,

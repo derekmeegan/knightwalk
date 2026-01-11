@@ -71,6 +71,13 @@ export function useGraph(): UseGraphResult {
   // Track prefetch in progress to avoid duplicates
   const prefetchingRef = useRef<Set<string>>(new Set());
 
+  // Track pending children (loaded but waiting for animation to finish)
+  const pendingChildrenRef = useRef<{ edges: Edge[]; positions: Position[] } | null>(null);
+  const animationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Animation duration (must match page.tsx setCenter duration)
+  const ANIMATION_DURATION = 500;
+
   /**
    * Get current position (last in path)
    */
@@ -162,10 +169,32 @@ export function useGraph(): UseGraphResult {
   }, [cacheEdgesFast, cachePositionFast]);
 
   /**
-   * Fetch children for a position (with caching)
+   * Show pending children (called after animation completes)
    */
-  const fetchChildren = useCallback(async (positionId: string) => {
+  const showPendingChildren = useCallback(() => {
+    const pending = pendingChildrenRef.current;
+    if (pending) {
+      setChildEdges(pending.edges);
+      setChildren(pending.positions);
+      setIsLoadingChildren(false);
+      pendingChildrenRef.current = null;
+
+      // Prefetch the most popular move's children
+      if (pending.edges.length > 0) {
+        prefetchChildren(pending.edges[0].to_position_id);
+      }
+    }
+  }, [prefetchChildren]);
+
+  /**
+   * Fetch children for a position (with caching)
+   * Results are stored in pendingChildrenRef until animation completes
+   */
+  const fetchChildren = useCallback(async (positionId: string, waitForAnimation = false) => {
     setIsLoadingChildren(true);
+
+    let edges: Edge[] = [];
+    let positions: Position[] = [];
 
     // Try cache first
     const cachedEdges = await getCachedEdgesFast(positionId);
@@ -186,34 +215,37 @@ export function useGraph(): UseGraphResult {
 
       // If all positions are cached, use them
       if (missingIds.length === 0) {
-        setChildEdges(cachedEdges);
-        setChildren(childPositions);
-        setIsLoadingChildren(false);
-
-        // Prefetch the most popular move's children
-        if (cachedEdges.length > 0) {
-          prefetchChildren(cachedEdges[0].to_position_id);
-        }
-        return;
+        edges = cachedEdges;
+        positions = childPositions;
       }
     }
 
-    // Fetch from database (single query for edges + positions)
-    const { edges, positions } = await getEdgesWithPositions(positionId, 50);
+    // If not fully cached, fetch from database
+    if (edges.length === 0) {
+      const result = await getEdgesWithPositions(positionId, 50);
+      edges = result.edges;
+      positions = result.positions;
 
-    // Cache everything
-    await cacheEdgesFast(positionId, edges);
-    for (const pos of positions) {
-      await cachePositionFast(pos);
+      // Cache everything
+      await cacheEdgesFast(positionId, edges);
+      for (const pos of positions) {
+        await cachePositionFast(pos);
+      }
     }
 
-    setChildEdges(edges);
-    setChildren(positions);
-    setIsLoadingChildren(false);
+    // Store results - they'll be shown after animation
+    if (waitForAnimation) {
+      pendingChildrenRef.current = { edges, positions };
+    } else {
+      // No animation, show immediately
+      setChildEdges(edges);
+      setChildren(positions);
+      setIsLoadingChildren(false);
 
-    // Prefetch the most popular move's children
-    if (edges.length > 0) {
-      prefetchChildren(edges[0].to_position_id);
+      // Prefetch the most popular move's children
+      if (edges.length > 0) {
+        prefetchChildren(edges[0].to_position_id);
+      }
     }
   }, [getCachedEdgesFast, getCachedPositionFast, cacheEdgesFast, cachePositionFast, prefetchChildren]);
 
@@ -291,50 +323,78 @@ export function useGraph(): UseGraphResult {
 
   /**
    * Navigate to a child node (expand into it)
+   * Animation-first: update path immediately, show children after animation
    */
-  const navigateToChild = useCallback(async (nodeId: string) => {
+  const navigateToChild = useCallback((nodeId: string) => {
     const childPosition = children.find(c => c.id === nodeId);
     if (!childPosition) return;
 
     const edge = childEdges.find(e => e.to_position_id === nodeId);
 
+    // Clear any pending animation timeout
+    if (animationTimeoutRef.current) {
+      clearTimeout(animationTimeoutRef.current);
+    }
+
+    // 1. Immediately update path (triggers animation)
     setPath(prev => [...prev, childPosition]);
     if (edge) {
       setPathEdges(prev => [...prev, edge]);
     }
 
+    // 2. Clear old children
     setChildren([]);
     setChildEdges([]);
 
+    // 3. Fetch new children (results stored in pending ref)
     if (useDatabase) {
-      await fetchChildren(nodeId);
+      fetchChildren(nodeId, true);
     } else {
       fetchMockChildren(nodeId);
     }
-  }, [children, childEdges, useDatabase, fetchChildren, fetchMockChildren]);
+
+    // 4. Show children after animation completes
+    animationTimeoutRef.current = setTimeout(() => {
+      showPendingChildren();
+    }, ANIMATION_DURATION + 50); // Small buffer after animation
+  }, [children, childEdges, useDatabase, fetchChildren, fetchMockChildren, showPendingChildren]);
 
   /**
    * Navigate to an ancestor (truncate path)
+   * Animation-first: update path immediately, show children after animation
    */
-  const navigateToAncestor = useCallback(async (nodeId: string) => {
+  const navigateToAncestor = useCallback((nodeId: string) => {
     const ancestorIndex = path.findIndex(p => p.id === nodeId);
     if (ancestorIndex === -1) return;
 
+    // Clear any pending animation timeout
+    if (animationTimeoutRef.current) {
+      clearTimeout(animationTimeoutRef.current);
+    }
+
+    // 1. Immediately update path (triggers animation)
     const newPath = path.slice(0, ancestorIndex + 1);
     const newPathEdges = pathEdges.slice(0, ancestorIndex);
 
     setPath(newPath);
     setPathEdges(newPathEdges);
 
+    // 2. Clear old children
     setChildren([]);
     setChildEdges([]);
 
+    // 3. Fetch new children (results stored in pending ref)
     if (useDatabase) {
-      await fetchChildren(nodeId);
+      fetchChildren(nodeId, true);
     } else {
       fetchMockChildren(nodeId);
     }
-  }, [path, pathEdges, useDatabase, fetchChildren, fetchMockChildren]);
+
+    // 4. Show children after animation completes
+    animationTimeoutRef.current = setTimeout(() => {
+      showPendingChildren();
+    }, ANIMATION_DURATION + 50);
+  }, [path, pathEdges, useDatabase, fetchChildren, fetchMockChildren, showPendingChildren]);
 
   /**
    * Navigate back one step
