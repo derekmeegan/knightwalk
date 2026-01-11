@@ -482,10 +482,14 @@ export function useGraph(options: UseGraphOptions = {}): UseGraphResult {
    */
   const nodes = useMemo((): PositionNode[] => {
     const result: PositionNode[] = [];
+    const seenIds = new Set<string>();
 
     // Add path nodes (ancestors + current)
     for (let i = 0; i < path.length; i++) {
       const position = path[i];
+      if (seenIds.has(position.id)) continue;
+      seenIds.add(position.id);
+
       const isLast = i === path.length - 1;
       const edge = i > 0 ? pathEdges[i - 1] : null;
 
@@ -517,8 +521,11 @@ export function useGraph(options: UseGraphOptions = {}): UseGraphResult {
       });
     }
 
-    // Add child nodes
+    // Add child nodes (skip if already in path - can happen with transpositions)
     for (const child of children) {
+      if (seenIds.has(child.id)) continue;
+      seenIds.add(child.id);
+
       const edge = childEdges.find(e => e.to_position_id === child.id);
 
       result.push({
@@ -559,10 +566,14 @@ export function useGraph(options: UseGraphOptions = {}): UseGraphResult {
    */
   const edges = useMemo((): MoveEdge[] => {
     const result: MoveEdge[] = [];
+    const seenEdgeIds = new Set<string>();
 
     // Path edges
     for (let i = 0; i < pathEdges.length; i++) {
       const edge = pathEdges[i];
+      if (seenEdgeIds.has(edge.id)) continue;
+      seenEdgeIds.add(edge.id);
+
       result.push({
         id: edge.id,
         source: edge.from_position_id,
@@ -583,10 +594,13 @@ export function useGraph(options: UseGraphOptions = {}): UseGraphResult {
       });
     }
 
-    // Child edges
+    // Child edges (skip if already in path)
     if (currentPosition) {
       for (let i = 0; i < childEdges.length; i++) {
         const edge = childEdges[i];
+        if (seenEdgeIds.has(edge.id)) continue;
+        seenEdgeIds.add(edge.id);
+
         result.push({
           id: edge.id,
           source: edge.from_position_id,
