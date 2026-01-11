@@ -197,3 +197,77 @@ export async function searchPositionsByOpening(query: string, limit = 20): Promi
 
   return data || [];
 }
+
+// Type for the joined query result
+interface EdgeWithPosition {
+  id: string;
+  from_position_id: string;
+  to_position_id: string;
+  move_san: string;
+  move_uci: string;
+  times_played: number;
+  white_wins: number;
+  draws: number;
+  black_wins: number;
+  created_at: string;
+  to_position: Position | null;
+}
+
+/**
+ * Get edges AND their target positions in one query
+ * This avoids a second round trip to fetch positions
+ */
+export async function getEdgesWithPositions(
+  positionId: string,
+  limit = 50
+): Promise<{ edges: Edge[]; positions: Position[] }> {
+  if (!supabase) return { edges: [], positions: [] };
+
+  // Get edges with their target positions in one query using foreign key join
+  const { data, error } = await supabase
+    .from("edges")
+    .select(`
+      *,
+      to_position:positions!edges_to_position_id_fkey(*)
+    `)
+    .eq("from_position_id", positionId)
+    .order("times_played", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    console.error("Error fetching edges with positions:", error);
+    return { edges: [], positions: [] };
+  }
+
+  if (!data) return { edges: [], positions: [] };
+
+  // Extract edges and positions from the joined result
+  const edges: Edge[] = [];
+  const positions: Position[] = [];
+  const seenPositions = new Set<string>();
+
+  for (const row of data as unknown as EdgeWithPosition[]) {
+    // Build edge object without the joined position
+    const edge: Edge = {
+      id: row.id,
+      from_position_id: row.from_position_id,
+      to_position_id: row.to_position_id,
+      move_san: row.move_san,
+      move_uci: row.move_uci,
+      times_played: row.times_played,
+      white_wins: row.white_wins,
+      draws: row.draws,
+      black_wins: row.black_wins,
+      created_at: row.created_at,
+    };
+    edges.push(edge);
+
+    // Extract the position if present and not seen
+    if (row.to_position && !seenPositions.has(row.to_position.id)) {
+      seenPositions.add(row.to_position.id);
+      positions.push(row.to_position);
+    }
+  }
+
+  return { edges, positions };
+}

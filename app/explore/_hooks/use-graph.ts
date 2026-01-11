@@ -6,15 +6,22 @@ import type { PositionNode, MoveEdge } from "../_lib/types";
 // Database functions
 import {
   getStartingPosition,
-  getEdgesFromPosition,
-  getPositionsByIds,
+  getEdgesWithPositions,
 } from "@/app/lib/db/positions";
 import type { Position, Edge } from "@/app/lib/db/database.types";
+
+// IndexedDB caching
+import {
+  getCachedPosition,
+  getCachedEdges,
+  cachePosition,
+  cacheEdges,
+  localDb,
+} from "@/app/lib/db/indexeddb";
 
 // Fallback mock data
 import {
   MOCK_POSITIONS,
-  MOCK_EDGES,
   getMockEdgesFromPosition,
 } from "@/app/lib/db/mock-data";
 
@@ -36,14 +43,15 @@ interface UseGraphResult {
 /**
  * Hook for managing graph state - simplified path + children model
  *
- * Only displays:
- * 1. Path nodes: Start → ... → Current (linear chain)
- * 2. Child nodes: All possible next moves from current position
+ * Optimizations:
+ * 1. IndexedDB caching - persists across page loads
+ * 2. Combined query - fetches edges + positions in one call
+ * 3. Prefetching - preloads the most popular move's children
  */
 export function useGraph(): UseGraphResult {
   // Path state: array of positions from start to current
   const [path, setPath] = useState<Position[]>([]);
-  const [pathEdges, setPathEdges] = useState<Edge[]>([]); // Edges along the path
+  const [pathEdges, setPathEdges] = useState<Edge[]>([]);
 
   // Children of current position
   const [children, setChildren] = useState<Position[]>([]);
@@ -56,9 +64,12 @@ export function useGraph(): UseGraphResult {
   // Database availability
   const [useDatabase, setUseDatabase] = useState(true);
 
-  // Cache for positions (avoid re-fetching)
+  // In-memory cache (supplement to IndexedDB for current session)
   const positionCacheRef = useRef<Map<string, Position>>(new Map());
   const edgeCacheRef = useRef<Map<string, Edge[]>>(new Map());
+
+  // Track prefetch in progress to avoid duplicates
+  const prefetchingRef = useRef<Set<string>>(new Set());
 
   /**
    * Get current position (last in path)
@@ -68,44 +79,143 @@ export function useGraph(): UseGraphResult {
   }, [path]);
 
   /**
-   * Fetch children for a position
+   * Get position from cache (memory -> IndexedDB -> null)
+   */
+  const getCachedPositionFast = useCallback(async (id: string): Promise<Position | null> => {
+    // Check memory first (fastest)
+    const memCached = positionCacheRef.current.get(id);
+    if (memCached) return memCached;
+
+    // Check IndexedDB
+    const dbCached = await getCachedPosition(id);
+    if (dbCached) {
+      positionCacheRef.current.set(id, dbCached);
+      return dbCached;
+    }
+
+    return null;
+  }, []);
+
+  /**
+   * Get edges from cache (memory -> IndexedDB -> null)
+   */
+  const getCachedEdgesFast = useCallback(async (positionId: string): Promise<Edge[] | null> => {
+    // Check memory first
+    const memCached = edgeCacheRef.current.get(positionId);
+    if (memCached) return memCached;
+
+    // Check IndexedDB
+    const dbCached = await getCachedEdges(positionId);
+    if (dbCached) {
+      edgeCacheRef.current.set(positionId, dbCached);
+      return dbCached;
+    }
+
+    return null;
+  }, []);
+
+  /**
+   * Cache position in both memory and IndexedDB
+   */
+  const cachePositionFast = useCallback(async (position: Position) => {
+    positionCacheRef.current.set(position.id, position);
+    await cachePosition(position);
+  }, []);
+
+  /**
+   * Cache edges in both memory and IndexedDB
+   */
+  const cacheEdgesFast = useCallback(async (positionId: string, edges: Edge[]) => {
+    edgeCacheRef.current.set(positionId, edges);
+    await cacheEdges(edges);
+  }, []);
+
+  /**
+   * Prefetch children for a position (background, no blocking)
+   */
+  const prefetchChildren = useCallback(async (positionId: string) => {
+    // Skip if already prefetching or cached
+    if (prefetchingRef.current.has(positionId)) return;
+    if (edgeCacheRef.current.has(positionId)) return;
+
+    const cachedEdges = await getCachedEdges(positionId);
+    if (cachedEdges) {
+      edgeCacheRef.current.set(positionId, cachedEdges);
+      return;
+    }
+
+    prefetchingRef.current.add(positionId);
+
+    try {
+      const { edges, positions } = await getEdgesWithPositions(positionId, 50);
+
+      // Cache results
+      await cacheEdgesFast(positionId, edges);
+      for (const pos of positions) {
+        await cachePositionFast(pos);
+      }
+    } catch (e) {
+      // Silent fail for prefetch
+    } finally {
+      prefetchingRef.current.delete(positionId);
+    }
+  }, [cacheEdgesFast, cachePositionFast]);
+
+  /**
+   * Fetch children for a position (with caching)
    */
   const fetchChildren = useCallback(async (positionId: string) => {
     setIsLoadingChildren(true);
 
-    const edgeCache = edgeCacheRef.current;
-    const positionCache = positionCacheRef.current;
+    // Try cache first
+    const cachedEdges = await getCachedEdgesFast(positionId);
 
-    // Check cache first
-    let edges = edgeCache.get(positionId);
-    if (!edges) {
-      edges = await getEdgesFromPosition(positionId, 50); // Get more moves
-      edgeCache.set(positionId, edges);
-    }
+    if (cachedEdges && cachedEdges.length > 0) {
+      // Get positions from cache
+      const childPositions: Position[] = [];
+      const missingIds: string[] = [];
 
-    // Get child position IDs
-    const childIds = edges.map(e => e.to_position_id);
-    const missingIds = childIds.filter(id => !positionCache.has(id));
+      for (const edge of cachedEdges) {
+        const pos = await getCachedPositionFast(edge.to_position_id);
+        if (pos) {
+          childPositions.push(pos);
+        } else {
+          missingIds.push(edge.to_position_id);
+        }
+      }
 
-    // Batch fetch missing positions
-    if (missingIds.length > 0) {
-      const fetched = await getPositionsByIds(missingIds);
-      for (const pos of fetched) {
-        positionCache.set(pos.id, pos);
+      // If all positions are cached, use them
+      if (missingIds.length === 0) {
+        setChildEdges(cachedEdges);
+        setChildren(childPositions);
+        setIsLoadingChildren(false);
+
+        // Prefetch the most popular move's children
+        if (cachedEdges.length > 0) {
+          prefetchChildren(cachedEdges[0].to_position_id);
+        }
+        return;
       }
     }
 
-    // Build children array
-    const childPositions: Position[] = [];
-    for (const id of childIds) {
-      const pos = positionCache.get(id);
-      if (pos) childPositions.push(pos);
+    // Fetch from database (single query for edges + positions)
+    const { edges, positions } = await getEdgesWithPositions(positionId, 50);
+
+    // Cache everything
+    await cacheEdgesFast(positionId, edges);
+    for (const pos of positions) {
+      await cachePositionFast(pos);
     }
 
     setChildEdges(edges);
-    setChildren(childPositions);
+    setChildren(positions);
     setIsLoadingChildren(false);
-  }, []);
+
+    // Prefetch the most popular move's children
+    if (edges.length > 0) {
+      prefetchChildren(edges[0].to_position_id);
+    }
+  }, [getCachedEdgesFast, getCachedPositionFast, cacheEdgesFast, cachePositionFast, prefetchChildren]);
 
   /**
    * Fetch children from mock data
@@ -116,7 +226,6 @@ export function useGraph(): UseGraphResult {
       .map(e => MOCK_POSITIONS.find(p => p.id === e.to_position_id))
       .filter((p): p is typeof MOCK_POSITIONS[0] => p !== undefined);
 
-    // Convert mock edges to Edge type (add created_at)
     const edges: Edge[] = mockEdges.map(e => ({
       ...e,
       created_at: new Date().toISOString(),
@@ -134,17 +243,37 @@ export function useGraph(): UseGraphResult {
       setIsLoading(true);
 
       if (useDatabase) {
-        const start = await getStartingPosition();
-        if (!start) {
-          // Database empty, fall back to mock
-          setUseDatabase(false);
-          setIsLoading(false);
-          return;
+        // Try to get starting position from IndexedDB first
+        const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+        let startPosition: Position | null = null;
+
+        // Check IndexedDB by FEN
+        try {
+          const cached = await localDb.positions
+            .where("fen")
+            .equals(startFen)
+            .first();
+          if (cached) {
+            startPosition = cached;
+            positionCacheRef.current.set(cached.id, cached);
+          }
+        } catch (e) {
+          // IndexedDB not available
         }
 
-        positionCacheRef.current.set(start.id, start);
-        setPath([start]);
-        await fetchChildren(start.id);
+        // If not cached, fetch from database
+        if (!startPosition) {
+          startPosition = await getStartingPosition();
+          if (!startPosition) {
+            setUseDatabase(false);
+            setIsLoading(false);
+            return;
+          }
+          await cachePositionFast(startPosition);
+        }
+
+        setPath([startPosition]);
+        await fetchChildren(startPosition.id);
       } else {
         // Mock data
         const start = MOCK_POSITIONS.find(p => p.id === "start");
@@ -158,26 +287,22 @@ export function useGraph(): UseGraphResult {
     };
 
     init();
-  }, [useDatabase, fetchChildren, fetchMockChildren]);
+  }, [useDatabase, fetchChildren, fetchMockChildren, cachePositionFast]);
 
   /**
    * Navigate to a child node (expand into it)
    */
   const navigateToChild = useCallback(async (nodeId: string) => {
-    // Find the child position
     const childPosition = children.find(c => c.id === nodeId);
     if (!childPosition) return;
 
-    // Find the edge that leads to this child
     const edge = childEdges.find(e => e.to_position_id === nodeId);
 
-    // Add to path
     setPath(prev => [...prev, childPosition]);
     if (edge) {
       setPathEdges(prev => [...prev, edge]);
     }
 
-    // Clear current children and load new ones
     setChildren([]);
     setChildEdges([]);
 
@@ -195,14 +320,12 @@ export function useGraph(): UseGraphResult {
     const ancestorIndex = path.findIndex(p => p.id === nodeId);
     if (ancestorIndex === -1) return;
 
-    // Truncate path to ancestor
     const newPath = path.slice(0, ancestorIndex + 1);
     const newPathEdges = pathEdges.slice(0, ancestorIndex);
 
     setPath(newPath);
     setPathEdges(newPathEdges);
 
-    // Load children of the ancestor
     setChildren([]);
     setChildEdges([]);
 
@@ -218,7 +341,6 @@ export function useGraph(): UseGraphResult {
    */
   const navigateBack = useCallback(() => {
     if (path.length <= 1) return;
-
     const parentId = path[path.length - 2].id;
     navigateToAncestor(parentId);
   }, [path, navigateToAncestor]);
@@ -247,7 +369,7 @@ export function useGraph(): UseGraphResult {
       result.push({
         id: position.id,
         type: "position",
-        position: { x: 0, y: 0 }, // Layout will set this
+        position: { x: 0, y: 0 },
         data: {
           positionId: position.id,
           fen: position.fen,
@@ -315,7 +437,7 @@ export function useGraph(): UseGraphResult {
   const edges = useMemo((): MoveEdge[] => {
     const result: MoveEdge[] = [];
 
-    // Path edges (between ancestors)
+    // Path edges
     for (let i = 0; i < pathEdges.length; i++) {
       const edge = pathEdges[i];
       result.push({
@@ -338,7 +460,7 @@ export function useGraph(): UseGraphResult {
       });
     }
 
-    // Child edges (from current to children)
+    // Child edges
     if (currentPosition) {
       for (let i = 0; i < childEdges.length; i++) {
         const edge = childEdges[i];
