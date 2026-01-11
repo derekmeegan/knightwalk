@@ -40,6 +40,7 @@ const edgeTypes: EdgeTypes = {
 interface ChildOption {
   nodeId: string;
   moveSan: string;
+  timesPlayed: number;
 }
 
 function ExploreContent() {
@@ -64,6 +65,7 @@ function ExploreContent() {
   const [childSelectOpen, setChildSelectOpen] = useState(false);
   const [childOptions, setChildOptions] = useState<ChildOption[]>([]);
   const [selectedChildIndex, setSelectedChildIndex] = useState(0);
+  const selectedChildRef = useRef<HTMLDivElement>(null);
 
   const {
     nodes,
@@ -179,6 +181,7 @@ function ExploreContent() {
     return childEdges.map((e) => ({
       nodeId: e.target,
       moveSan: e.data?.moveSan || "?",
+      timesPlayed: e.data?.timesPlayed || 0,
     }));
   }, [currentPositionId, edges]);
 
@@ -287,8 +290,8 @@ function ExploreContent() {
             // Single child - navigate directly
             navigateToChild(children[0].nodeId);
           } else if (children.length > 1) {
-            // Multiple children - open selection (sorted alphabetically)
-            setChildOptions([...children].sort((a, b) => a.moveSan.localeCompare(b.moveSan)));
+            // Multiple children - open selection (sorted by games played)
+            setChildOptions([...children].sort((a, b) => b.timesPlayed - a.timesPlayed));
             setSelectedChildIndex(0);
             setChildSelectOpen(true);
           }
@@ -317,6 +320,16 @@ function ExploreContent() {
     navigateBack,
     resetToStart,
   ]);
+
+  // Auto-scroll selected child into view
+  useEffect(() => {
+    if (childSelectOpen && selectedChildRef.current) {
+      selectedChildRef.current.scrollIntoView({
+        block: "nearest",
+        behavior: "smooth",
+      });
+    }
+  }, [selectedChildIndex, childSelectOpen]);
 
   return (
     <div className="h-screen w-full">
@@ -351,27 +364,36 @@ function ExploreContent() {
       {/* Child selection popup */}
       {childSelectOpen && childOptions.length > 0 && (
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50">
-          <div className="bg-surface border border-border-default rounded-lg shadow-xl p-2 min-w-[160px]">
+          <div className="bg-surface border border-border-default rounded-lg shadow-xl p-2 min-w-[200px]">
             <div className="text-xs text-tertiary px-2 py-1 mb-1">
               Select move (↑↓ Enter)
             </div>
-            {childOptions.map((option, index) => (
-              <div
-                key={option.nodeId}
-                className={cn(
-                  "px-3 py-2 rounded cursor-pointer font-mono text-sm",
-                  index === selectedChildIndex
-                    ? "bg-accent text-white"
-                    : "hover:bg-surface-hover",
-                )}
-                onClick={() => {
-                  navigateToChild(option.nodeId);
-                  setChildSelectOpen(false);
-                }}
-              >
-                {option.moveSan}
-              </div>
-            ))}
+            <div className="max-h-[300px] overflow-y-auto">
+              {childOptions.map((option, index) => (
+                <div
+                  key={option.nodeId}
+                  ref={index === selectedChildIndex ? selectedChildRef : null}
+                  className={cn(
+                    "px-3 py-2 rounded cursor-pointer flex items-center justify-between gap-4",
+                    index === selectedChildIndex
+                      ? "bg-accent text-white"
+                      : "hover:bg-surface-hover",
+                  )}
+                  onClick={() => {
+                    navigateToChild(option.nodeId);
+                    setChildSelectOpen(false);
+                  }}
+                >
+                  <span className="font-mono text-sm font-medium">{option.moveSan}</span>
+                  <span className={cn(
+                    "text-xs tabular-nums",
+                    index === selectedChildIndex ? "text-white/70" : "text-tertiary"
+                  )}>
+                    {option.timesPlayed.toLocaleString()} games
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -393,7 +415,7 @@ function ExploreContent() {
               if (children.length === 1) {
                 navigateToChild(children[0].nodeId);
               } else if (children.length > 1) {
-                setChildOptions([...children].sort((a, b) => a.moveSan.localeCompare(b.moveSan)));
+                setChildOptions([...children].sort((a, b) => b.timesPlayed - a.timesPlayed));
                 setSelectedChildIndex(0);
                 setChildSelectOpen(true);
               }

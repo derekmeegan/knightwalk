@@ -15,13 +15,10 @@ import { ChessBoard } from "./_components/chess-board";
 import { BoardControls } from "./_components/board-controls";
 import { EvalBar } from "./_components/eval-bar";
 import { PVLines } from "./_components/pv-lines";
-import { GamesList } from "./_components/games-list";
 import { useEngine } from "@/app/hooks/use-engine";
 import { createGame, STARTING_FEN } from "@/app/lib/chess";
-import { MOCK_GAMES } from "@/app/lib/db/mock-data";
 import { useTransitionStore } from "@/app/stores/transition-store";
 import type { Move, EngineEvaluation } from "@/app/lib/chess/types";
-import type { MockGame } from "@/app/lib/db/mock-data";
 
 // Memoized score display component to prevent re-renders
 const ScoreDisplay = memo(function ScoreDisplay({
@@ -108,7 +105,6 @@ function AnalyzeContent() {
   const [moves, setMoves] = useState<Move[]>([]);
   const [currentMoveIndex, setCurrentMoveIndex] = useState(-1);
   const [orientation, setOrientation] = useState<"white" | "black">("white");
-  const [selectedGameId, setSelectedGameId] = useState<string | undefined>();
 
   // Engine hook
   const { info: engineInfo, isReady, analyze, pause, resume } = useEngine();
@@ -186,23 +182,6 @@ function AnalyzeContent() {
   const resetBoard = useCallback(() => {
     setMoves([]);
     setCurrentMoveIndex(-1);
-    setSelectedGameId(undefined);
-  }, []);
-
-  // Game selection
-  const handleGameClick = useCallback((game: MockGame) => {
-    setSelectedGameId(game.id);
-    // Load game moves
-    if (game.moves) {
-      const tempGame = createGame();
-      const loadedMoves: Move[] = [];
-      for (const moveSan of game.moves) {
-        const move = tempGame.move(moveSan);
-        if (move) loadedMoves.push(move);
-      }
-      setMoves(loadedMoves);
-      setCurrentMoveIndex(loadedMoves.length - 1);
-    }
   }, []);
 
   // Handle clicking a move in the PV lines - applies moves up to that point
@@ -297,87 +276,72 @@ function AnalyzeContent() {
   const evaluations = engineInfo?.evaluations ?? [];
 
   return (
-    <div className="flex-1 px-4 py-2 lg:py-6 flex flex-col justify-center overflow-hidden">
-      <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 xl:gap-12 w-full max-w-[1400px] mx-auto">
-        {/* Left column: Board with vertical eval bar, then PVLines */}
-        <div className="flex flex-col gap-4">
-          {/* Back button */}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleBackToExplore}
-            className="px-0"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
+    <div className="flex-1 px-4 py-2 lg:py-6 flex flex-col justify-center items-center overflow-hidden">
+      <div className="flex flex-col gap-4">
+        {/* Back button */}
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={handleBackToExplore}
+          className="px-0"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
 
-          {/* Board with vertical eval bar */}
-          <div className="flex-shrink-0">
-            <div className="flex gap-4 lg:gap-6 xl:gap-8">
-              {/* Vertical Eval Bar with engine status */}
-              <div className="w-8 lg:w-10 flex flex-col items-center flex-shrink-0">
-                <ScoreDisplay evaluation={primaryEval} />
-                <div className="flex-1 w-full mt-2">
-                  <EvalBar score={score} orientation="vertical" size={32} />
-                </div>
-                <div className="mt-2">
-                  <EngineStatus state={engineInfo?.state || "idle"} />
-                </div>
+        {/* Board with vertical eval bar */}
+        <div className="flex-shrink-0">
+          <div className="flex gap-4 lg:gap-6 xl:gap-8">
+            {/* Vertical Eval Bar with engine status */}
+            <div className="w-8 lg:w-10 flex flex-col items-center flex-shrink-0">
+              <ScoreDisplay evaluation={primaryEval} />
+              <div className="flex-1 w-full mt-2">
+                <EvalBar score={score} orientation="vertical" size={32} />
               </div>
-
-              {/* Chess board - responsive sizing based on viewport */}
-              <div className="flex-1 max-w-[min(calc(100vh-280px),600px)] lg:max-w-[min(calc(100vh-240px),700px)]">
-                <ChessBoard
-                  fen={currentFen}
-                  onMove={handleMove}
-                  orientation={orientation}
-                  lastMove={lastMove}
-                  bestMove={bestMove}
-                />
+              <div className="mt-2">
+                <EngineStatus state={engineInfo?.state || "idle"} />
               </div>
             </div>
-          </div>
 
-          {/* Board controls */}
-          <div className="flex-shrink-0 max-w-[min(calc(100vh-280px),600px)] lg:max-w-[min(calc(100vh-240px),700px)] pl-12 lg:pl-16 box-content">
-            <BoardControls
-              onFirst={goToStart}
-              onPrevious={goToPrevious}
-              onNext={goToNext}
-              onLast={goToEnd}
-              onFlip={flipBoard}
-              onReset={resetBoard}
-              canGoBack={currentMoveIndex >= 0}
-              canGoForward={currentMoveIndex < moves.length - 1}
-            />
-          </div>
-
-          {/* Suggested moves (PVLines) - below board */}
-          <div className="flex-shrink-0 max-w-[min(calc(100vh-280px),600px)] lg:max-w-[min(calc(100vh-240px),700px)] pl-12 lg:pl-16 box-content">
-            <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-3">
-              <h3 className="text-xs font-medium text-zinc-500 mb-2">
-                Best Lines
-              </h3>
-              <PVLines
-                evaluations={evaluations}
-                maxLines={3}
-                currentFen={currentFen}
-                onMoveClick={handlePVMoveClick}
+            {/* Chess board - responsive sizing based on viewport */}
+            <div className="flex-1 max-w-[min(calc(100vh-280px),600px)] lg:max-w-[min(calc(100vh-240px),700px)]">
+              <ChessBoard
+                fen={currentFen}
+                onMove={handleMove}
+                orientation={orientation}
+                lastMove={lastMove}
+                bestMove={bestMove}
               />
             </div>
           </div>
         </div>
 
-        {/* Right column: Games - hidden on mobile, self-start to align with board */}
-        <div className="hidden lg:block w-[280px] xl:w-[320px] 2xl:w-[360px] flex-shrink-0 self-start mt-12">
-          <GamesList
-            games={MOCK_GAMES}
-            total={MOCK_GAMES.length}
-            isLoading={false}
-            onGameClick={handleGameClick}
-            selectedGameId={selectedGameId}
-            pageSize={8}
+        {/* Board controls */}
+        <div className="flex-shrink-0 max-w-[min(calc(100vh-280px),600px)] lg:max-w-[min(calc(100vh-240px),700px)] pl-12 lg:pl-16 box-content">
+          <BoardControls
+            onFirst={goToStart}
+            onPrevious={goToPrevious}
+            onNext={goToNext}
+            onLast={goToEnd}
+            onFlip={flipBoard}
+            onReset={resetBoard}
+            canGoBack={currentMoveIndex >= 0}
+            canGoForward={currentMoveIndex < moves.length - 1}
           />
+        </div>
+
+        {/* Suggested moves (PVLines) - below board */}
+        <div className="flex-shrink-0 max-w-[min(calc(100vh-280px),600px)] lg:max-w-[min(calc(100vh-240px),700px)] pl-12 lg:pl-16 box-content">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-3">
+            <h3 className="text-xs font-medium text-zinc-500 mb-2">
+              Best Lines
+            </h3>
+            <PVLines
+              evaluations={evaluations}
+              maxLines={3}
+              currentFen={currentFen}
+              onMoveClick={handlePVMoveClick}
+            />
+          </div>
         </div>
       </div>
     </div>
