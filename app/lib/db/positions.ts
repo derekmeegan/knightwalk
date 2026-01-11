@@ -214,6 +214,68 @@ interface EdgeWithPosition {
 }
 
 /**
+ * Get the path from start position to a target position (by FEN)
+ * Walks backwards from target to start via most-played incoming edges
+ * Returns { path, pathEdges } in forward order (start to target)
+ */
+export async function getPathToPosition(
+  targetFen: string
+): Promise<{ path: Position[]; pathEdges: Edge[] } | null> {
+  if (!supabase) return null;
+
+  const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+  // If target is start position, just return it
+  if (targetFen === startFen) {
+    const startPos = await getStartingPosition();
+    return startPos ? { path: [startPos], pathEdges: [] } : null;
+  }
+
+  // Get target position
+  const targetPos = await getPositionByFen(targetFen);
+  if (!targetPos) return null;
+
+  // Walk backwards to start position
+  const reversePath: Position[] = [targetPos];
+  const reverseEdges: Edge[] = [];
+  let currentPos = targetPos;
+  const maxDepth = 100; // Safety limit
+
+  for (let i = 0; i < maxDepth; i++) {
+    if (currentPos.fen === startFen) break;
+
+    // Get incoming edges (sorted by times_played desc)
+    const incomingEdges = await getIncomingEdges(currentPos.id);
+    if (incomingEdges.length === 0) {
+      // No path to start - position is orphaned
+      return null;
+    }
+
+    // Take the most played edge (most likely the mainline)
+    const bestEdge = incomingEdges[0];
+    reverseEdges.push(bestEdge);
+
+    // Get the parent position
+    const { data: parentPos, error } = await supabase
+      .from("positions")
+      .select("*")
+      .eq("id", bestEdge.from_position_id)
+      .single();
+
+    if (error || !parentPos) return null;
+
+    reversePath.push(parentPos);
+    currentPos = parentPos;
+  }
+
+  // Reverse to get forward order (start to target)
+  const path = reversePath.reverse();
+  const pathEdges = reverseEdges.reverse();
+
+  return { path, pathEdges };
+}
+
+/**
  * Get edges AND their target positions in one query
  * This avoids a second round trip to fetch positions
  */

@@ -7,6 +7,7 @@ import type { PositionNode, MoveEdge } from "../_lib/types";
 import {
   getStartingPosition,
   getEdgesWithPositions,
+  getPathToPosition,
 } from "@/app/lib/db/positions";
 import type { Position, Edge } from "@/app/lib/db/database.types";
 
@@ -40,6 +41,10 @@ interface UseGraphResult {
   resetToStart: () => void;
 }
 
+interface UseGraphOptions {
+  focusFen?: string | null;
+}
+
 /**
  * Hook for managing graph state - simplified path + children model
  *
@@ -48,7 +53,8 @@ interface UseGraphResult {
  * 2. Combined query - fetches edges + positions in one call
  * 3. Prefetching - preloads the most popular move's children
  */
-export function useGraph(): UseGraphResult {
+export function useGraph(options: UseGraphOptions = {}): UseGraphResult {
+  const { focusFen } = options;
   // Path state: array of positions from start to current
   const [path, setPath] = useState<Position[]>([]);
   const [pathEdges, setPathEdges] = useState<Edge[]>([]);
@@ -269,12 +275,34 @@ export function useGraph(): UseGraphResult {
 
   /**
    * Initialize: load starting position and its children
+   * If focusFen is provided, restore the path to that position
    */
   useEffect(() => {
     const init = async () => {
       setIsLoading(true);
 
       if (useDatabase) {
+        // If focusFen is provided, try to restore path to that position
+        if (focusFen) {
+          const pathResult = await getPathToPosition(focusFen);
+          if (pathResult && pathResult.path.length > 0) {
+            // Cache all positions and edges
+            for (const pos of pathResult.path) {
+              await cachePositionFast(pos);
+            }
+
+            setPath(pathResult.path);
+            setPathEdges(pathResult.pathEdges);
+
+            // Fetch children of the target position
+            const targetPosition = pathResult.path[pathResult.path.length - 1];
+            await fetchChildren(targetPosition.id);
+            setIsLoading(false);
+            return;
+          }
+          // If path restoration failed, fall through to default start
+        }
+
         // Try to get starting position from IndexedDB first
         const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
         let startPosition: Position | null = null;
@@ -319,7 +347,7 @@ export function useGraph(): UseGraphResult {
     };
 
     init();
-  }, [useDatabase, fetchChildren, fetchMockChildren, cachePositionFast]);
+  }, [useDatabase, focusFen, fetchChildren, fetchMockChildren, cachePositionFast]);
 
   /**
    * Navigate to a child node (expand into it)

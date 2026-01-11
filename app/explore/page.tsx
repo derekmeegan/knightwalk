@@ -78,7 +78,7 @@ function ExploreContent() {
     navigateToAncestor,
     navigateBack,
     resetToStart,
-  } = useGraph();
+  } = useGraph({ focusFen });
 
   // Apply dagre layout to nodes (horizontal: left-to-right)
   const layoutedPositionNodes = applyDagreLayout(
@@ -148,13 +148,24 @@ function ExploreContent() {
 
   // Initial focus: zoom to current position
   const hasInitialized = useRef(false);
+  const lastFocusFen = useRef<string | null>(null);
+
+  // Reset initialization when focusFen changes (returning from analyze with different position)
+  useEffect(() => {
+    if (focusFen !== lastFocusFen.current) {
+      hasInitialized.current = false;
+      lastZoomedPositionRef.current = null;
+      lastFocusFen.current = focusFen;
+    }
+  }, [focusFen]);
+
   useEffect(() => {
     if (hasInitialized.current || isLoading || isTransitioning) return;
     if (layoutedPositionNodes.length === 0) return;
 
     hasInitialized.current = true;
 
-    // Find target node: either the focus target or the start node
+    // Find target node: either the focus target or the current position
     const targetNode = focusFen
       ? layoutedPositionNodes.find((n) => n.data.fen === focusFen)
       : layoutedPositionNodes.find((n) => !n.data.moveSan);
