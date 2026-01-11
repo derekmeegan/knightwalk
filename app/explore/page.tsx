@@ -24,7 +24,7 @@ import { GraphEdge } from "./_components/graph-edge";
 import { IntroNode } from "./_components/intro-node";
 import { applyDagreLayout } from "./_lib/graph-layout";
 import { cn } from "@/app/lib/cn";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { useTransitionStore } from "@/app/stores/transition-store";
 
 // Define custom node and edge types
@@ -62,7 +62,18 @@ function ExploreContent() {
   const [childOptions, setChildOptions] = useState<ChildOption[]>([]);
   const [selectedChildIndex, setSelectedChildIndex] = useState(0);
 
-  const { nodes, edges, selectedNodeId, selectNode, isLoading } = useGraph();
+  const {
+    nodes,
+    edges,
+    currentPositionId,
+    pathPositionIds,
+    isLoading,
+    isLoadingChildren,
+    navigateToChild,
+    navigateToAncestor,
+    navigateBack,
+    resetToStart,
+  } = useGraph();
 
   // Apply dagre layout to nodes (horizontal: left-to-right)
   const layoutedPositionNodes = applyDagreLayout(
@@ -73,7 +84,7 @@ function ExploreContent() {
   ).map((node) => ({
     ...node,
     // Sync selection state with ReactFlow
-    selected: node.id === selectedNodeId,
+    selected: node.id === currentPositionId,
   }));
 
   // Add intro node positioned to the left of the start node
@@ -105,10 +116,9 @@ function ExploreContent() {
     previousPositions.current = newPositions;
   }, [layoutedNodes]);
 
-  // Navigate to a node, zoom to it, and update URL
-  const navigateToNode = useCallback(
+  // Zoom to a node
+  const zoomToNode = useCallback(
     (nodeId: string, updateUrl = true) => {
-      selectNode(nodeId);
       const nodeData = layoutedPositionNodes.find((n) => n.id === nodeId);
       if (nodeData) {
         setCenter(nodeData.position.x + 90, nodeData.position.y + 140, {
@@ -123,23 +133,10 @@ function ExploreContent() {
         }
       }
     },
-    [selectNode, layoutedPositionNodes, setCenter, router],
+    [layoutedPositionNodes, setCenter, router],
   );
 
-  // Navigate to start node (for Escape key) - clears URL
-  const navigateToStart = useCallback(() => {
-    const startNode = layoutedPositionNodes.find((n) => !n.data.moveSan);
-    if (startNode) {
-      selectNode(startNode.id);
-      setCenter(startNode.position.x + 90, startNode.position.y + 140, {
-        zoom: 1.5,
-        duration: 500,
-      });
-      router.replace("/explore", { scroll: false });
-    }
-  }, [layoutedPositionNodes, selectNode, setCenter, router]);
-
-  // Initial focus: either on the focusFen node (returning from Analyze) or start node
+  // Initial focus: zoom to current position
   const hasInitialized = useRef(false);
   useEffect(() => {
     if (hasInitialized.current || isLoading || isTransitioning) return;
@@ -154,61 +151,79 @@ function ExploreContent() {
 
     if (targetNode) {
       const timeoutId = setTimeout(() => {
-        // Don't update URL on initial focus - it's either already set or should stay clean
-        navigateToNode(targetNode.id, false);
+        zoomToNode(targetNode.id, false);
       }, 100);
       return () => clearTimeout(timeoutId);
     }
-  }, [layoutedPositionNodes, isLoading, isTransitioning, focusFen, navigateToNode]);
+  }, [layoutedPositionNodes, isLoading, isTransitioning, focusFen, zoomToNode]);
 
-  // Get parent node of current selection
-  const getParentNodeId = useCallback(() => {
-    if (!selectedNodeId) return null;
-    const parentEdge = edges.find((e) => e.target === selectedNodeId);
-    return parentEdge?.source || null;
-  }, [selectedNodeId, edges]);
+  // Zoom to current position when it changes
+  useEffect(() => {
+    if (currentPositionId && !isLoading) {
+      zoomToNode(currentPositionId);
+    }
+  }, [currentPositionId, isLoading, zoomToNode]);
 
-  // Get child nodes of current selection
+  // Get child nodes of current selection (for keyboard navigation)
   const getChildNodes = useCallback((): ChildOption[] => {
-    if (!selectedNodeId) return [];
-    const childEdges = edges.filter((e) => e.source === selectedNodeId);
+    if (!currentPositionId) return [];
+    const childEdges = edges.filter((e) => e.source === currentPositionId);
     return childEdges.map((e) => ({
       nodeId: e.target,
       moveSan: e.data?.moveSan || "?",
     }));
-  }, [selectedNodeId, edges]);
+  }, [currentPositionId, edges]);
 
-  // Handle node click - select and smoothly zoom to node
+  // Handle node click
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: { id: string }) => {
       setChildSelectOpen(false);
-      navigateToNode(node.id);
+
+      // Check if this is a path node (ancestor) or a child node
+      const isPathNode = pathPositionIds.includes(node.id);
+      const isCurrentNode = node.id === currentPositionId;
+
+      if (isCurrentNode) {
+        // Already selected, do nothing
+        return;
+      } else if (isPathNode) {
+        // Navigate back to ancestor
+        navigateToAncestor(node.id);
+      } else {
+        // Navigate to child
+        navigateToChild(node.id);
+      }
     },
-    [navigateToNode],
+    [pathPositionIds, currentPositionId, navigateToAncestor, navigateToChild],
   );
 
-  // Handle node double click - currently no-op
+  // Handle node double click - go to analyze
   const onNodeDoubleClick = useCallback(
-    (_: React.MouseEvent, _node: { id: string }) => {},
-    [],
+    (_: React.MouseEvent, node: { id: string }) => {
+      const nodeData = nodes.find((n) => n.id === node.id);
+      if (nodeData) {
+        const fen = encodeURIComponent(nodeData.data.fen);
+        router.push(`/analyze?fen=${fen}`);
+      }
+    },
+    [nodes, router],
   );
 
-  // Handle background click (deselect)
+  // Handle background click (do nothing - keep selection)
   const onPaneClick = useCallback(() => {
     setChildSelectOpen(false);
-    selectNode(null);
-  }, [selectNode]);
+  }, []);
 
   // Handle analyze button
   const handleAnalyze = useCallback(() => {
-    if (selectedNodeId) {
-      const node = nodes.find((n) => n.id === selectedNodeId);
+    if (currentPositionId) {
+      const node = nodes.find((n) => n.id === currentPositionId);
       if (node) {
         const fen = encodeURIComponent(node.data.fen);
         router.push(`/analyze?fen=${fen}`);
       }
     }
-  }, [selectedNodeId, nodes, router]);
+  }, [currentPositionId, nodes, router]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -234,7 +249,7 @@ function ExploreContent() {
           case "Enter":
             e.preventDefault();
             if (childOptions[selectedChildIndex]) {
-              navigateToNode(childOptions[selectedChildIndex].nodeId);
+              navigateToChild(childOptions[selectedChildIndex].nodeId);
               setChildSelectOpen(false);
             }
             return;
@@ -249,39 +264,32 @@ function ExploreContent() {
       switch (e.key) {
         case "Escape":
           e.preventDefault();
-          navigateToStart();
+          resetToStart();
           break;
 
         case "ArrowLeft":
-          if (selectedNodeId) {
-            e.preventDefault();
-            const parentId = getParentNodeId();
-            if (parentId) {
-              navigateToNode(parentId);
-            }
-          }
+          e.preventDefault();
+          navigateBack();
           break;
 
         case "ArrowRight":
-          if (selectedNodeId) {
-            e.preventDefault();
-            const children = getChildNodes();
-            if (children.length === 1) {
-              // Single child - navigate directly
-              navigateToNode(children[0].nodeId);
-            } else if (children.length > 1) {
-              // Multiple children - open selection (sorted alphabetically)
-              setChildOptions([...children].sort((a, b) => a.moveSan.localeCompare(b.moveSan)));
-              setSelectedChildIndex(0);
-              setChildSelectOpen(true);
-            }
+          e.preventDefault();
+          const children = getChildNodes();
+          if (children.length === 1) {
+            // Single child - navigate directly
+            navigateToChild(children[0].nodeId);
+          } else if (children.length > 1) {
+            // Multiple children - open selection (sorted alphabetically)
+            setChildOptions([...children].sort((a, b) => a.moveSan.localeCompare(b.moveSan)));
+            setSelectedChildIndex(0);
+            setChildSelectOpen(true);
           }
           break;
 
         case "a":
         case "Enter":
           e.preventDefault();
-          if (selectedNodeId) {
+          if (currentPositionId) {
             handleAnalyze();
           }
           break;
@@ -291,23 +299,16 @@ function ExploreContent() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
-    selectedNodeId,
+    currentPositionId,
     handleAnalyze,
     childSelectOpen,
     childOptions,
     selectedChildIndex,
-    getParentNodeId,
     getChildNodes,
-    navigateToNode,
-    navigateToStart,
+    navigateToChild,
+    navigateBack,
+    resetToStart,
   ]);
-
-  // Get selected node position for popup placement
-  const selectedNodePosition = useMemo(() => {
-    if (!selectedNodeId) return null;
-    const node = layoutedNodes.find((n) => n.id === selectedNodeId);
-    return node?.position || null;
-  }, [selectedNodeId, layoutedNodes]);
 
   return (
     <div className="h-screen w-full">
@@ -331,6 +332,14 @@ function ExploreContent() {
         <Background color="hsl(var(--border-subtle))" gap={20} />
       </ReactFlow>
 
+      {/* Loading indicator for children */}
+      {isLoadingChildren && (
+        <div className="absolute top-4 right-4 z-50 flex items-center gap-2 bg-surface/90 backdrop-blur px-3 py-2 rounded-lg border border-border-default shadow-md">
+          <Loader2 className="h-4 w-4 animate-spin text-accent" />
+          <span className="text-sm text-secondary">Loading moves...</span>
+        </div>
+      )}
+
       {/* Child selection popup */}
       {childSelectOpen && childOptions.length > 0 && (
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50">
@@ -348,7 +357,7 @@ function ExploreContent() {
                     : "hover:bg-surface-hover",
                 )}
                 onClick={() => {
-                  navigateToNode(option.nodeId);
+                  navigateToChild(option.nodeId);
                   setChildSelectOpen(false);
                 }}
               >
@@ -360,14 +369,11 @@ function ExploreContent() {
       )}
 
       {/* Mobile navigation arrows */}
-      {selectedNodeId && (
+      {currentPositionId && (
         <div className="lg:hidden fixed bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4">
           <button
-            onClick={() => {
-              const parentId = getParentNodeId();
-              if (parentId) navigateToNode(parentId);
-            }}
-            disabled={!getParentNodeId()}
+            onClick={() => navigateBack()}
+            disabled={pathPositionIds.length <= 1}
             className="w-14 h-14 rounded-full bg-zinc-900/80 dark:bg-zinc-100/80 flex items-center justify-center active:scale-95 disabled:opacity-30 disabled:active:scale-100 touch-manipulation shadow-lg"
             aria-label="Previous move"
           >
@@ -377,7 +383,7 @@ function ExploreContent() {
             onClick={() => {
               const children = getChildNodes();
               if (children.length === 1) {
-                navigateToNode(children[0].nodeId);
+                navigateToChild(children[0].nodeId);
               } else if (children.length > 1) {
                 setChildOptions([...children].sort((a, b) => a.moveSan.localeCompare(b.moveSan)));
                 setSelectedChildIndex(0);

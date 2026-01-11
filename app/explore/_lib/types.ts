@@ -22,6 +22,8 @@ export interface PositionNodeData {
   isFocused: boolean; // Is this in the focus path?
   isDimmed: boolean; // Dimmed in focus mode?
   pathFens: string[]; // FEN positions from start to this position (for animation)
+  isPathNode?: boolean; // Is this node part of the current path (ancestors + current)?
+  isCurrentNode?: boolean; // Is this the current/selected node?
 }
 
 export type PositionNode = Node<PositionNodeData, "position">;
@@ -40,6 +42,7 @@ export interface MoveEdgeData {
   blackWins: number;
   isMainLine: boolean; // Most played move from parent
   isTransposition: boolean; // Does this create a transposition?
+  isPathEdge?: boolean; // Is this edge part of the current path?
 }
 
 export type MoveEdge = Edge<MoveEdgeData>;
