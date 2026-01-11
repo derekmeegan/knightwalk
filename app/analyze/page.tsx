@@ -308,7 +308,8 @@ function AnalyzeContent() {
             </div>
 
             {/* Chess board - responsive sizing based on viewport */}
-            <div className="flex-1 max-w-[min(calc(100vh-280px),600px)] lg:max-w-[min(calc(100vh-240px),700px)]">
+            {/* Mobile: constrain by width, Desktop: constrain by height */}
+            <div className="flex-1 max-w-[min(calc(100vw-80px),calc(100vh-320px),400px)] lg:max-w-[min(calc(100vh-240px),700px)]">
               <ChessBoard
                 fen={currentFen}
                 onMove={handleMove}
@@ -321,7 +322,7 @@ function AnalyzeContent() {
         </div>
 
         {/* Board controls */}
-        <div className="flex-shrink-0 max-w-[min(calc(100vh-280px),600px)] lg:max-w-[min(calc(100vh-240px),700px)] pl-12 lg:pl-16 box-content">
+        <div className="flex-shrink-0 max-w-[min(calc(100vw-80px),calc(100vh-320px),400px)] lg:max-w-[min(calc(100vh-240px),700px)] pl-12 lg:pl-16 box-content">
           <BoardControls
             onFirst={goToStart}
             onPrevious={goToPrevious}
@@ -335,7 +336,7 @@ function AnalyzeContent() {
         </div>
 
         {/* Suggested moves (PVLines) - below board */}
-        <div className="flex-shrink-0 max-w-[min(calc(100vh-280px),600px)] lg:max-w-[min(calc(100vh-240px),700px)] pl-12 lg:pl-16 box-content">
+        <div className="flex-shrink-0 max-w-[min(calc(100vw-80px),calc(100vh-320px),400px)] lg:max-w-[min(calc(100vh-240px),700px)] pl-12 lg:pl-16 box-content">
           <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-3">
             <h3 className="text-xs font-medium text-zinc-500 mb-2">
               Best Lines
