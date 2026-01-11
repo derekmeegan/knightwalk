@@ -81,7 +81,11 @@ export function useGraph(options: UseGraphOptions = {}): UseGraphResult {
   const pendingChildrenRef = useRef<{ edges: Edge[]; positions: Position[] } | null>(null);
   const animationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Navigation debounce to prevent rapid navigation race conditions
+  const isNavigatingRef = useRef(false);
+
   // Animation duration (must match page.tsx setCenter duration)
+  // Shared constant to avoid timing coupling issues
   const ANIMATION_DURATION = 500;
 
   /**
@@ -168,7 +172,10 @@ export function useGraph(options: UseGraphOptions = {}): UseGraphResult {
         await cachePositionFast(pos);
       }
     } catch (e) {
-      // Silent fail for prefetch
+      // Log prefetch failures for debugging (non-critical, doesn't affect UX)
+      if (process.env.NODE_ENV === "development") {
+        console.warn("Prefetch failed for position:", positionId, e);
+      }
     } finally {
       prefetchingRef.current.delete(positionId);
     }
@@ -349,15 +356,30 @@ export function useGraph(options: UseGraphOptions = {}): UseGraphResult {
     init();
   }, [useDatabase, focusFen, fetchChildren, fetchMockChildren, cachePositionFast]);
 
+  // Cleanup animation timeout on unmount to prevent memory leak
+  useEffect(() => {
+    return () => {
+      if (animationTimeoutRef.current) {
+        clearTimeout(animationTimeoutRef.current);
+      }
+    };
+  }, []);
+
   /**
    * Navigate to a child node (expand into it)
    * Animation-first: update path immediately, show children after animation
    */
   const navigateToChild = useCallback((nodeId: string) => {
+    // Prevent rapid navigation race conditions
+    if (isNavigatingRef.current) return;
+
     const childPosition = children.find(c => c.id === nodeId);
     if (!childPosition) return;
 
     const edge = childEdges.find(e => e.to_position_id === nodeId);
+
+    // Mark as navigating
+    isNavigatingRef.current = true;
 
     // Clear any pending animation timeout
     if (animationTimeoutRef.current) {
@@ -384,6 +406,7 @@ export function useGraph(options: UseGraphOptions = {}): UseGraphResult {
     // 4. Show children after animation completes
     animationTimeoutRef.current = setTimeout(() => {
       showPendingChildren();
+      isNavigatingRef.current = false;
     }, ANIMATION_DURATION + 50); // Small buffer after animation
   }, [children, childEdges, useDatabase, fetchChildren, fetchMockChildren, showPendingChildren]);
 
@@ -392,8 +415,19 @@ export function useGraph(options: UseGraphOptions = {}): UseGraphResult {
    * Animation-first: update path immediately, show children after animation
    */
   const navigateToAncestor = useCallback((nodeId: string) => {
+    // Prevent rapid navigation race conditions
+    if (isNavigatingRef.current) return;
+
     const ancestorIndex = path.findIndex(p => p.id === nodeId);
     if (ancestorIndex === -1) return;
+
+    // Validate path/edge sync
+    if (pathEdges.length !== path.length - 1) {
+      console.warn("Path/edge mismatch detected");
+    }
+
+    // Mark as navigating
+    isNavigatingRef.current = true;
 
     // Clear any pending animation timeout
     if (animationTimeoutRef.current) {
@@ -421,6 +455,7 @@ export function useGraph(options: UseGraphOptions = {}): UseGraphResult {
     // 4. Show children after animation completes
     animationTimeoutRef.current = setTimeout(() => {
       showPendingChildren();
+      isNavigatingRef.current = false;
     }, ANIMATION_DURATION + 50);
   }, [path, pathEdges, useDatabase, fetchChildren, fetchMockChildren, showPendingChildren]);
 

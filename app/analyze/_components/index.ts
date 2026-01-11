@@ -4,5 +4,3 @@ export { EnginePanel } from "./engine-panel";
 export { EvalBar } from "./eval-bar";
 export { PVLines } from "./pv-lines";
 export { MoveList } from "./move-list";
-export { GamesList } from "./games-list";
-export { GameCard } from "./game-card";

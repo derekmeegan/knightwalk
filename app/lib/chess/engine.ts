@@ -1,4 +1,5 @@
 import type { EngineState, EngineEvaluation, EngineInfo } from "./types";
+import { isValidFen } from "./game";
 
 // ============================================
 // STOCKFISH ENGINE WRAPPER
@@ -69,30 +70,41 @@ export class StockfishEngine {
 
       return new Promise((resolve) => {
         let uciOk = false;
+        let initComplete = false;
 
-        this.engine!.addMessageListener((line: string) => {
-          if (line === "uciok") {
-            uciOk = true;
-            // Engine is ready, configure it
-            this.sendCommand("setoption name Threads value 2");
-            this.sendCommand("setoption name Hash value 64");
-            this.sendCommand(`setoption name MultiPV value ${this.multiPV}`);
-            this.sendCommand("isready");
-          } else if (line === "readyok" && uciOk) {
-            this.state = "ready";
-            this.notifyUpdate();
-            resolve(true);
-          } else {
-            this.handleEngineOutput(line);
+        const messageListener = (line: string) => {
+          // Handle init-specific messages only before init completes
+          if (!initComplete) {
+            if (line === "uciok") {
+              uciOk = true;
+              // Engine is ready, configure it
+              this.sendCommand("setoption name Threads value 2");
+              this.sendCommand("setoption name Hash value 64");
+              this.sendCommand(`setoption name MultiPV value ${this.multiPV}`);
+              this.sendCommand("isready");
+              return;
+            } else if (line === "readyok" && uciOk) {
+              initComplete = true;
+              this.state = "ready";
+              this.notifyUpdate();
+              resolve(true);
+              return;
+            }
           }
-        });
+
+          // Always process analysis output (info, bestmove lines)
+          this.handleEngineOutput(line);
+        };
+
+        this.engine!.addMessageListener(messageListener);
 
         // Start UCI protocol
         this.sendCommand("uci");
 
         // Timeout after 10 seconds
         setTimeout(() => {
-          if (this.state === "loading") {
+          if (this.state === "loading" && !initComplete) {
+            initComplete = true;
             console.error("Stockfish initialization timeout");
             this.state = "error";
             this.notifyUpdate();
@@ -127,6 +139,12 @@ export class StockfishEngine {
   analyze(fen: string, depth?: number): void {
     if (!this.engine || this.state === "loading" || this.state === "error") {
       console.warn("Engine not ready");
+      return;
+    }
+
+    // Validate FEN before sending to engine
+    if (!isValidFen(fen)) {
+      console.warn("Invalid FEN, skipping analysis:", fen);
       return;
     }
 
@@ -259,11 +277,12 @@ export class StockfishEngine {
     // Parse "bestmove" lines
     if (line.startsWith("bestmove")) {
       const parts = line.split(" ");
-      const bestMove = parts[1];
-      const ponderMove = parts[3];  // After "ponder" keyword
+      const bestMove = parts[1] ?? null;
+      const ponderIdx = parts.indexOf("ponder");
+      const ponderMove = ponderIdx !== -1 ? parts[ponderIdx + 1] : undefined;
       this.state = "ready";
       this.notifyUpdate();
-      if (this.onBestMove) {
+      if (this.onBestMove && bestMove) {
         this.onBestMove(bestMove, ponderMove);
       }
     }
@@ -311,10 +330,12 @@ export class StockfishEngine {
     const npsIdx = parts.indexOf("nps");
     const timeIdx = parts.indexOf("time");
 
-    // For mate scores, the value is the number of moves to mate
-    // Positive = winning for the side to move, so normalize to white's perspective
+    // For mate scores, use large centipawn values instead of Infinity
+    // to avoid breaking math operations. 50000cp = winning, -50000cp = losing
+    // The actual mate-in count is preserved in mateIn field
+    const MATE_SCORE = 50000;
     const normalizedScore = scoreType === "mate"
-      ? (scoreValue > 0 ? Infinity : -Infinity)
+      ? (scoreValue > 0 ? MATE_SCORE : -MATE_SCORE)
       : scoreValue;
 
     // mateIn should be absolute (number of moves), but preserve sign for display

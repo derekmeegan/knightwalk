@@ -19,6 +19,7 @@ class FocusAnalysisPolicy {
   private currentFen: string | null = null;
   private isPanning = false;
   private panTimeout: ReturnType<typeof setTimeout> | null = null;
+  private isDestroyed = false;
 
   constructor() {
     // Listen for tab visibility changes
@@ -77,9 +78,12 @@ class FocusAnalysisPolicy {
     // Debounce resume - wait 2 seconds after panning stops
     if (this.panTimeout) {
       clearTimeout(this.panTimeout);
+      this.panTimeout = null;
     }
 
     this.panTimeout = setTimeout(() => {
+      // Check if destroyed before resuming
+      if (this.isDestroyed) return;
       if (this.currentMode === "analyze" && this.currentFen && !this.isPanning) {
         const engine = getEngine();
         engine.resume(this.currentFen);
@@ -106,11 +110,13 @@ class FocusAnalysisPolicy {
    * Clean up
    */
   destroy(): void {
+    this.isDestroyed = true;
     if (typeof document !== "undefined") {
       document.removeEventListener("visibilitychange", this.handleVisibilityChange);
     }
     if (this.panTimeout) {
       clearTimeout(this.panTimeout);
+      this.panTimeout = null;
     }
     destroyEngine();
   }

@@ -42,12 +42,17 @@ export function useEngine(options: UseEngineOptions = {}): UseEngineResult {
       setInfo(newInfo);
     });
 
-    engine.init().then((success) => {
-      setIsReady(success);
-      if (success) {
-        engine.setDepth(depth);
-      }
-    });
+    engine.init()
+      .then((success) => {
+        setIsReady(success);
+        if (success) {
+          engine.setDepth(depth);
+        }
+      })
+      .catch((err) => {
+        console.error("Engine initialization failed:", err);
+        setIsReady(false);
+      });
 
     return () => {
       // Don't destroy engine on unmount - it's a singleton
@@ -61,11 +66,15 @@ export function useEngine(options: UseEngineOptions = {}): UseEngineResult {
     const engine = getEngine();
     const policy = getFocusPolicy();
 
-    policy.onPositionChange(fen);
-
-    if (engine.getInfo().state !== "paused") {
-      engine.analyze(fen);
+    // Check engine state before updating policy to avoid state mismatch
+    const engineState = engine.getInfo().state;
+    if (engineState === "paused") {
+      // Don't update policy if engine won't analyze
+      return;
     }
+
+    policy.onPositionChange(fen);
+    engine.analyze(fen);
   }, []);
 
   const stop = useCallback(() => {

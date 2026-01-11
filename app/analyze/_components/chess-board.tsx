@@ -59,6 +59,8 @@ export function ChessBoard({
     // Show legal move indicators
     if (showLegalMoves && legalMoves.length > 0) {
       legalMoves.forEach((square) => {
+        // Validate square format before casting
+        if (!/^[a-h][1-8]$/.test(square)) return;
         const piece = game.get(square as ChessSquare);
         styles[square] = {
           backgroundImage: piece
@@ -116,6 +118,9 @@ export function ChessBoard({
         setLegalMoves([]);
         return;
       }
+
+      // Validate square format
+      if (!/^[a-h][1-8]$/.test(square)) return;
 
       // Select a piece
       const piece = game.get(square as ChessSquare);
@@ -175,6 +180,8 @@ export function ChessBoard({
       square: string | null;
     }) => {
       if (!interactive || !square) return;
+      // Validate square format
+      if (!/^[a-h][1-8]$/.test(square)) return;
 
       const moves = game.getLegalMovesForSquare(square as ChessSquare);
       setLegalMoves(moves.map((m) => m.to as Square));

@@ -88,9 +88,14 @@ function AnalyzeContent() {
         });
       });
 
-      transition.finished.then(() => {
-        setTransitioning(false);
-      });
+      transition.finished
+        .then(() => {
+          setTransitioning(false);
+        })
+        .catch(() => {
+          // Handle navigation failure gracefully
+          setTransitioning(false);
+        });
     } else {
       router.push(targetUrl);
     }
@@ -109,7 +114,7 @@ function AnalyzeContent() {
   // Engine hook
   const { info: engineInfo, isReady, analyze, pause, resume } = useEngine();
 
-  // Current position FEN
+  // Current position FEN - memoized to avoid recalculating
   const currentFen = useMemo(() => {
     if (currentMoveIndex < 0) return initialFen;
     // Replay moves up to current index
@@ -139,9 +144,9 @@ function AnalyzeContent() {
     };
   }, [engineInfo]);
 
-  // Analyze current position when it changes
+  // Analyze current position when it changes or engine becomes ready
   useEffect(() => {
-    if (isReady) {
+    if (isReady && currentFen) {
       analyze(currentFen);
     }
   }, [currentFen, isReady, analyze]);

@@ -70,17 +70,16 @@ export async function getCachedEdges(fromPositionId: string): Promise<Edge[] | n
   // Check if any are expired
   const now = Date.now();
   const valid = cached.filter((e) => now - e.cachedAt < CACHE_TTL);
+  const expired = cached.filter((e) => now - e.cachedAt >= CACHE_TTL);
 
-  if (valid.length !== cached.length) {
-    // Some expired, clear and return null
-    await localDb.edges
-      .where("from_position_id")
-      .equals(fromPositionId)
-      .delete();
-    return null;
+  // Delete only expired edges, keep valid ones
+  if (expired.length > 0) {
+    const expiredIds = expired.map((e) => e.id);
+    await localDb.edges.bulkDelete(expiredIds);
   }
 
-  return valid;
+  // Return valid edges if any exist, otherwise null to trigger refetch
+  return valid.length > 0 ? valid : null;
 }
 
 /**

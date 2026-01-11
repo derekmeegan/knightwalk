@@ -102,10 +102,11 @@ export async function getPositionByFen(fen: string): Promise<Position | null> {
 export async function getPositionByZobrist(hash: bigint, fen: string): Promise<Position | null> {
   if (!supabase) return null;
 
+  // Use string representation to avoid 64-bit precision loss
   const { data, error } = await supabase
     .from("positions")
     .select("*")
-    .eq("zobrist_hash", Number(hash))
+    .eq("zobrist_hash", hash.toString())
     .eq("fen", fen)
     .single();
 
@@ -213,10 +214,27 @@ interface EdgeWithPosition {
   to_position: Position | null;
 }
 
+// Type for the incoming edge query with parent position
+interface IncomingEdgeWithPosition {
+  id: string;
+  from_position_id: string;
+  to_position_id: string;
+  move_san: string;
+  move_uci: string;
+  times_played: number;
+  white_wins: number;
+  draws: number;
+  black_wins: number;
+  created_at: string;
+  from_position: Position | null;
+}
+
 /**
  * Get the path from start position to a target position (by FEN)
  * Walks backwards from target to start via most-played incoming edges
  * Returns { path, pathEdges } in forward order (start to target)
+ *
+ * Optimized: Uses single query per level (joins edge + parent position)
  */
 export async function getPathToPosition(
   targetFen: string
@@ -238,34 +256,52 @@ export async function getPathToPosition(
   // Walk backwards to start position
   const reversePath: Position[] = [targetPos];
   const reverseEdges: Edge[] = [];
-  let currentPos = targetPos;
+  let currentPosId = targetPos.id;
+  let currentFen = targetPos.fen;
   const maxDepth = 100; // Safety limit
 
   for (let i = 0; i < maxDepth; i++) {
-    if (currentPos.fen === startFen) break;
+    if (currentFen === startFen) break;
 
-    // Get incoming edges (sorted by times_played desc)
-    const incomingEdges = await getIncomingEdges(currentPos.id);
-    if (incomingEdges.length === 0) {
+    // Get best incoming edge with parent position in one query
+    const { data, error } = await supabase
+      .from("edges")
+      .select(`
+        *,
+        from_position:positions!edges_from_position_id_fkey(*)
+      `)
+      .eq("to_position_id", currentPosId)
+      .order("times_played", { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error || !data) {
       // No path to start - position is orphaned
       return null;
     }
 
-    // Take the most played edge (most likely the mainline)
-    const bestEdge = incomingEdges[0];
-    reverseEdges.push(bestEdge);
+    const row = data as unknown as IncomingEdgeWithPosition;
 
-    // Get the parent position
-    const { data: parentPos, error } = await supabase
-      .from("positions")
-      .select("*")
-      .eq("id", bestEdge.from_position_id)
-      .single();
+    // Build edge object
+    const edge: Edge = {
+      id: row.id,
+      from_position_id: row.from_position_id,
+      to_position_id: row.to_position_id,
+      move_san: row.move_san,
+      move_uci: row.move_uci,
+      times_played: row.times_played,
+      white_wins: row.white_wins,
+      draws: row.draws,
+      black_wins: row.black_wins,
+      created_at: row.created_at,
+    };
+    reverseEdges.push(edge);
 
-    if (error || !parentPos) return null;
+    if (!row.from_position) return null;
 
-    reversePath.push(parentPos);
-    currentPos = parentPos;
+    reversePath.push(row.from_position);
+    currentPosId = row.from_position.id;
+    currentFen = row.from_position.fen;
   }
 
   // Reverse to get forward order (start to target)

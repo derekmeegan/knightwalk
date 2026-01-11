@@ -94,13 +94,20 @@ export function usePosition(positionId: string | null): UsePositionResult {
 export function useStartingPosition() {
   const [position, setPosition] = useState<Position | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    getStartingPosition().then((pos) => {
-      setPosition(pos);
-      setIsLoading(false);
-    });
+    getStartingPosition()
+      .then((pos) => {
+        setPosition(pos);
+        setIsLoading(false);
+      })
+      .catch((err) => {
+        console.error("Failed to fetch starting position:", err);
+        setError(err instanceof Error ? err : new Error("Failed to fetch starting position"));
+        setIsLoading(false);
+      });
   }, []);
 
-  return { position, isLoading };
+  return { position, isLoading, error };
 }

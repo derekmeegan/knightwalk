@@ -13,12 +13,19 @@ export const EvalBar = memo(function EvalBar({
   orientation = "horizontal",
   size = 24
 }: EvalBarProps) {
-  // Clamp score to +/-1000 centipawns (+/-10 pawns) for display
-  const clampedScore = Math.max(-1000, Math.min(1000, score));
-
-  // Convert to percentage (0 = black winning, 50 = equal, 100 = white winning)
-  // Using a sigmoid-like transformation for better visualization
-  const percentage = scoreToPercentage(clampedScore);
+  // Handle Infinity/large mate scores (50000cp = winning side)
+  // These come from engine when position is checkmate
+  let percentage: number;
+  if (!isFinite(score) || Math.abs(score) >= 50000) {
+    // Decisive position - show full bar for winning side
+    percentage = score > 0 ? 100 : 0;
+  } else {
+    // Clamp score to +/-1000 centipawns (+/-10 pawns) for display
+    const clampedScore = Math.max(-1000, Math.min(1000, score));
+    // Convert to percentage (0 = black winning, 50 = equal, 100 = white winning)
+    // Using a sigmoid-like transformation for better visualization
+    percentage = scoreToPercentage(clampedScore);
+  }
 
   if (orientation === "vertical") {
     // Vertical bar - white fills from bottom, black from top
